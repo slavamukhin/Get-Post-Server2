@@ -7,156 +7,139 @@ const host = 'http://localhost:3001';
 const request = r.defaults({
     encoding: null
 });
+ const rp = require('request-promise').defaults({
+     encoding: null,
+     resolveWithFullResponse: true
+ });
 const {Readable} = require('stream');
 
 describe('test server', () => {
-   before(done => {
-       server.listen(3001, done);
+   before(async () => {
+       await server.listen(3001);
    });
-    after(done => {
-        server.close(done);
+    after(async () => {
+        await server.close();
     });
-    beforeEach(done => {
-        fsE.emptyDirSync(config.filePath);
-        done();
+    beforeEach(async () => {
+        await fsE.emptyDirSync(config.filePath);
     });
-    it('should return index.html', done => {
-        request(host, (error, response, body) => {
-            if (error) return done(error);
-            const indexHtml = fs.readFileSync(config.publicPath + '/index.html', {encoding: 'utf-8'});
-            should.equal(indexHtml, body, 'rewrote should');
-            done();
-        });
+    it('should return index.html', async () => {
+        const indexHtml = fs.readFileSync(config.publicPath + '/index.html');
+        const response = await rp(host);
+        response.body.equals(indexHtml).should.be.true();
     });
     describe('tests GET', () => {
         context('When exists GET/file', () => {
-            beforeEach(done=>{
-                fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
-                done();
+            beforeEach(async () => {
+                await fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
             });
-            it('return statusCode 200 & the file', done => {
+            it('return statusCode 200 & the file', async () => {
                 const file = fs.readFileSync(config.filePath + '/small.jpg');
-                request.get(host + '/small.jpg', (error, response, body) => {
-                    if (error) return done(error);
-                    response.statusCode.should.be.equal(200);
-                    body.equals(file).should.be.true();
-                    done();
-                });
+                const response = await rp(host + '/small.jpg');
+                response.statusCode.should.be.equal(200);
+                response.body.equals(file).should.be.true();
+
             });
         });
         context('File not found GET/file', () => {
-            it('should return 404', (done) => {
-                request(host + '/small.jpg', (error, response, body) => {
-                   if (error) return done(error);
-                   response.statusCode.should.be.equal(404);
-                   done();
+            it('should return 404', async () => {
+                await rp(host + '/small.jpg').catch(err => {
+                    err.statusCode.should.be.equal(404);
                 });
-            })
+            });
         });
 
-        it('Wrong pass nested/pass or nested/../pass', done=> {
-            request.get(host + '/wrong/../pass', (error, response, body)=>{
-                if (error) return done(error);
-                response.statusCode.should.be.equal(400);
-                done();
-            });
+        it('Wrong path nested/path or nested/../path', async () => {
+            await rp(host + '/wrong/../path').catch(err => {
+                err.statusCode.should.be.equal(400);
+            })
         });
     });
     context('tests POST', () => {
         context('When exists POST/file', () => {
-            beforeEach(done => {
-                fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
-                done();
+            beforeEach(async () => {
+                await fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
             });
+            const options = {
+                method: 'POST',
+                uri: host + '/small.jpg',
+            };
             context('When small file size', () => {
-                it('return 409 file exists POST/file', done => {
+                it('return 409 file exists POST/file', async () => {
                     const mtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
-                    const req = request.post(host + '/small.jpg', (error, respons, body) => {
-                        if (error) return done(error);
-                       const newMtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
-                       mtime.should.be.eql(newMtime);
-                       respons.statusCode.should.be.equal(409);
-                       done();
+
+                    await rp(options).catch(err => {
+                        const newMtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
+                        mtime.should.be.eql(newMtime);
+                        err.statusCode.should.be.equal(409);
                     });
-                    fsE.createReadStream(config.fixturePath + '/small.jpg').pipe(req);
                 });
             });
             context('When zero file size', () => {
-                it('return 409 file exists POST/file', done => {
-                    const req = request.post(host + '/small.jpg', (error, response, body) => {
-                        if (error) return done(error);
-
-                        response.statusCode.should.be.equal(409);
-                        done();
+                it('return 409 file exists POST/file', async () => {
+                    await rp(options).catch(err => {
+                        err.statusCode.should.be.equal(409)
                     });
-                    // emulate zero file
-                    const stream = new Readable();
-                    stream.pipe(req);
-                    stream.push(null);
                 });
             });
         });
         context('When file to big POST/file', () => {
-           it('should return 413 & no file appears', done => {
-               const req = request.post(host + '/big.png', (error, response, body) => {
-                   if (error) return done(error);
-                   response.statusCode.should.be.equal(413);
+            const options = {
+                method: 'POST',
+                url: host + '/big.png',
+            };
+           it('should return 413 & no file appears', async () => {
+               await rp(options).catch(err => {
                    fsE.existsSync(config.filePath + '/big.png').should.be.false();
-                   done();
+                   err.statusCode.should.be.equal(413);
                });
-               fsE.createReadStream(config.fixturePath + '/big.png').pipe(req);
            });
         });
-        context('When upload a new file POST/file', () => {
-           it('should return 200 & upload a new file', done => {
-              const req = request.post(host + '/small.jpg', (error, response, body) => {
-                  if (error) return done(error);
-                  fsE.readFileSync(config.filePath + '/small.jpg').equals(
-                      fsE.readFileSync(config.fixturePath + '/small.jpg')).should.be.true();
-                  response.statusCode.should.be.equal(200);
-                  done();
-              });
-              fsE.createReadStream(config.fixturePath + '/small.jpg').pipe(req);
-           });
-        });
-        context('When upload a new file zero size POST/file', () => {
-            it('should return 200 & upload a new file', done => {
-                const req = request.post(host + '/small.jpg', (error, response, body) => {
-                    if (error) return done(error);
+        context('When upload', () => {
+            const options = {
+                method: 'POST',
+                url: host + '/small.jpg',
+            };
+            context('When upload a new file POST/file', () => {
+                it('should return 200 & upload a new file', async () => {
+                    const file = fsE.readFileSync(config.fixturePath + '/small.jpg');
+                    let response = await rp(options);
+                    response.statusCode.should.be.equal(200);
+                    console.log('response.body', response.body);
+                    console.log('file', file);
+                    // response.body.equals(file).should.be.true();
+                });
+            });
+            context('When upload a new file zero size POST/file', () => {
+                it('should return 200 & upload a new file', async () => {
+                    const response = await rp(options);
                     response.statusCode.should.be.equal(200);
                     fsE.statSync(config.filePath + '/small.jpg').size.should.be.equal(0);
-                    done();
                 });
-
-                //emulate zero file
-                const stream = new Readable();
-                stream.pipe(req);
-                stream.push(null);
             });
         });
+
     });
     context('tests DELETE', () => {
+        const options = {
+            method: 'DELETE',
+            url: host + '/small.jpg',
+        };
         context('When exists DELETE/file', () => {
-            beforeEach(done => {
-               fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
-               done();
+            beforeEach(async () => {
+               await fsE.copySync(config.fixturePath + '/small.jpg', config.filePath + '/small.jpg');
             });
-            it('return statusCode 200 & response "OK"', done => {
-                request.delete(host + '/small.jpg', (error, response, body) => {
-                    if (error) return done(error);
-                    response.statusCode.should.be.equal(200);
-                    response.body.toString().should.be.equal('OK');
-                    done();
-                });
+            it('return statusCode 200 & response "OK"', async () => {
+                const response = await rp(options);
+                response.statusCode.should.be.equal(200);
+                response.body.toString().should.be.equal('OK');
             });
         });
         context('File not found DELETE/file', () => {
-            it('should return 404', done => {
-                request.delete(host + '/small.jpg', (error, response, body) => {
-                    if (error) return done(error);
-                    response.statusCode.should.be.equal(404);
-                    done();
-                })
+            it('should return 404', async () => {
+                await rp(options).catch(err => {
+                   err.statusCode.should.be.equal(404);
+                });
             });
         });
     });
