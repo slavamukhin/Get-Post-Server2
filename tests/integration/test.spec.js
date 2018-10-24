@@ -9,6 +9,7 @@ const request = r.defaults({
 });
  const rp = require('request-promise').defaults({
      encoding: null,
+     simple: false,
      resolveWithFullResponse: true
  });
 const {Readable} = require('stream');
@@ -43,16 +44,15 @@ describe('test server', () => {
         });
         context('File not found GET/file', () => {
             it('should return 404', async () => {
-                await rp(host + '/small.jpg').catch(err => {
-                    err.statusCode.should.be.equal(404);
-                });
+                const response = await rp(host + '/small.jpg');
+                response.statusCode.should.be.equal(404);
             });
         });
 
         it('Wrong path nested/path or nested/../path', async () => {
-            await rp(host + '/wrong/../path').catch(err => {
-                err.statusCode.should.be.equal(400);
-            })
+            const response = await rp(host + '/wrong/../path');
+            response.statusCode.should.be.equal(400);
+
         });
     });
     context('tests POST', () => {
@@ -68,11 +68,10 @@ describe('test server', () => {
                 it('return 409 file exists POST/file', async () => {
                     const mtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
 
-                    await rp(options).catch(err => {
-                        const newMtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
-                        mtime.should.be.eql(newMtime);
-                        err.statusCode.should.be.equal(409);
-                    });
+                    const response = await rp(options);
+                    const newMtime = fsE.statSync(config.filePath + '/small.jpg').mtime;
+                    mtime.should.be.eql(newMtime);
+                    response.statusCode.should.be.equal(409);
                 });
             });
             context('When zero file size', () => {
@@ -137,9 +136,8 @@ describe('test server', () => {
         });
         context('File not found DELETE/file', () => {
             it('should return 404', async () => {
-                await rp(options).catch(err => {
-                   err.statusCode.should.be.equal(404);
-                });
+                const response = await rp(options);
+                response.statusCode.should.be.equal(404);
             });
         });
     });
